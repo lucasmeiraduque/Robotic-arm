@@ -1,25 +1,20 @@
-# Projeto Braço Robótico - RoboChallenge
+# Projeto Braço Robótico
 
 ---
 
+## **Disciplina:** Sistemas Embarcados
+
 **Engenharia da Computação - PUC Minas Lourdes**
 
-### **Categoria:** Freestyle
-
-### **Membros do grupo:** 
-- João Gabriel Mendonça
-- Lucas Meira Duque
-- Luís Felipe Campelo
-- Nathália de Carvalho
-    
 ### **Objetivo Principal**
 
-O projeto visa o desenvolvimento e a construção de um **braço robótico**. A estrutura será impressa em 3D, e o controle será feito por um **microcontrolador Micro:bit**.
+O projeto visa o desenvolvimento e a construção de um **braço robótico funcional**. A estrutura será impressa em 3D, e o controle será feito por um **microcontrolador Micro:bit**. O braço deverá ser capaz de manipular objetos leves e ser operado remotamente por um controle de videogame, utilizando comunicação sem fio.
 
 ### **Objetivos Específicos**
 
 * **Programação:** Desenvolver o código (em **Python** ou **C++**) para controlar os movimentos do braço através do Micro:bit.
-* **Controle de Movimento:** Utilizar **motores seervos e motores de passo** para movimentar o robo.
+* **Controle de Movimento:** Utilizar **motores de passo** para garantir movimentos precisos e controlados.
+* **Interface de Controle:** O controle remoto será um **controle de videogame**, proporcionando uma interface intuitiva e familiar.
 
 ### **Arquitetura Utilizada**
 
