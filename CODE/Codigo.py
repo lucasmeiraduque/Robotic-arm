@@ -1,157 +1,194 @@
-import ustruct
-import time
-from microbit import * 
-_MODE1 = 0x00
-_PRESCALE = 0xFE
-_LED0_ON_L = 0x06
-_LED0_ON_H = 0x07
-_LED0_OFF_L = 0x08
-_LED0_OFF_H = 0x09
+from microbit import *
+import utime
 
-class PCA9685:
-    """Classe para controlar o driver PCA9685, adaptada para o objeto 'i2c' do micro:bit."""
-    def __init__(self, i2c, address=0x40):
-        self.i2c = i2c
-        self.address = address
-        
-        self.i2c.write(self.address, bytearray([_MODE1, 0x00]))
-        self.freq(50) 
+# --- Configurações do PCA9685 ---
+PCA = 0x40
+FREQ = 50  # Hz para servo analógico
 
-    def _write(self, register, value):
-        self.i2c.write(self.address, bytearray([register, value & 0xFF]))
+# --- Mapeamento de Portas ---
+PORTAS_NIVEL_1 = [0, 1]  # Motores da base (0 = Esquerda/Principal, 1 = Direita/Espelhado)
+PORTA_NIVEL_2 = 3        # Articulação 2
+PORTA_NIVEL_3 = 4        # Articulação 3
 
-    def _read(self, register):
-        self.i2c.write(self.address, bytearray([register]), repeat=True) 
-        return self.i2c.read(self.address, 1)[0]
+# --- Estado Inicial ---
+# O nível atual começa em 1 (Base)
+nivel_atual = 1
 
-    def freq(self, freq=None):
-        if freq is None:
-            return int(25000000.0 / 4096 / (self._read(_PRESCALE) - 0.5))
-        prescaleval = int(25000000.0 / 4096.0 / float(freq) + 0.5)
-        oldmode = self._read(_MODE1)
-        newmode = (oldmode & 0x7F) | 0x10
-        self._write(_MODE1, newmode)
-        self._write(_PRESCALE, prescaleval)
-        self._write(_MODE1, oldmode)
-        time.sleep_ms(5)
-        self._write(_MODE1, oldmode | 0xA1) 
-
-    def duty(self, channel, value, invert=False):
-        if not 0 <= value <= 4095:
-            raise ValueError("Value must be 0-4095")
-        
-        buf = bytearray(5)
-        buf[0] = _LED0_ON_L + 4 * channel
-        buf[1] = 0 & 0xFF 
-        buf[2] = (0 >> 8) & 0xFF 
-        buf[3] = value & 0xFF 
-        buf[4] = (value >> 8) & 0xFF 
-        self.i2c.write(self.address, buf)
-
-    def servo_angle(self, channel, angle):
-        if not 0 <= angle <= 180:
-            raise ValueError("Angle must be 0-180")
-            
-        min_pulse = 102  
-        max_pulse = 512  
-        
-        duty = min_pulse + (max_pulse - min_pulse) * (angle / 180)
-        self.duty(channel, int(duty))
-i2c.init(scl=pin19, sda=pin20)
-CANAL_NIVEL_2_A = 1
-CANAL_NIVEL_2_B = 2
-CANAL_NIVEL_3 = 3
-CANAL_NIVEL_5 = 4  
-CANAL_NIVEL_6 = 5  
-CANAL_NIVEL_4 = 6  
-angulos_atuais = {
-    2: 90, 3: 90, 4: 90, 5: 90, 6: 90 
+# Dicionário com os ângulos INICIAIS "lógicos" (baseado no motor principal de cada nível)
+# Nível 1: O motor principal (porta 0) começa em 100.
+# Nível 2 e 3: Começam em 90.
+angulos = {
+    1: 100, 
+    2: 90,
+    3: 90
 }
-ANGULO_MAX = 180
-ANGULO_MIN = 0
-TEMPO_ATUALIZACAO_MS = 20 
-MOVIMENTO_MACRO_INCREMENTO = 3 
-def send_servo_angle(nivel, angulo):
-    """Encapsula a lógica de envio do ângulo para o PCA9685 (Para Mover e Hold)."""
-    if nivel == 2:
-        pca.servo_angle(CANAL_NIVEL_2_A, angulo)
-        pca.servo_angle(CANAL_NIVEL_2_B, 180 - angulo)
-    elif nivel == 3: pca.servo_angle(CANAL_NIVEL_3, angulo)
-    elif nivel == 4: pca.servo_angle(CANAL_NIVEL_4, angulo)
-    elif nivel == 5: pca.servo_angle(CANAL_NIVEL_5, angulo)
-    elif nivel == 6: pca.servo_angle(CANAL_NIVEL_6, angulo)
-def mover_para_angulo_suave(nivel, angulo_alvo):
-    """Move um servo para o angulo_alvo de forma incremental, garantindo hold nos outros."""
-    global angulos_atuais
-    angulo_atual = angulos_atuais.get(nivel, 90)
-    direcao = 1 if angulo_alvo > angulo_atual else -1
-    while abs(angulo_alvo - angulo_atual) > MOVIMENTO_MACRO_INCREMENTO:
-        angulo_atual += direcao * MOVIMENTO_MACRO_INCREMENTO
-        angulo_atual = max(ANGULO_MIN, min(ANGULO_MAX, angulo_atual))
-        send_servo_angle(nivel, angulo_atual)
-        angulos_atuais[nivel] = angulo_atual
-        for n, ang in angulos_atuais.items():
-            if n != nivel:
-                send_servo_angle(n, ang)
-        time.sleep_ms(TEMPO_ATUALIZACAO_MS) 
-    if angulo_alvo != angulo_atual:
-        send_servo_angle(nivel, angulo_alvo)
-        angulos_atuais[nivel] = angulo_alvo
-        time.sleep_ms(TEMPO_ATUALIZACAO_MS)
-def executar_macro_a():
-    """Coreografia 1: Abre Braço Baixo, Levanta Articulação 1 e Abre Garra."""
-    display.show("A")
-    time.sleep_ms(300)
-    mover_para_angulo_suave(2, 60)   
-    mover_para_angulo_suave(3, 120)  
-    mover_para_angulo_suave(6, 110)  
-    mover_para_angulo_suave(5, 105)  
-    mover_para_angulo_suave(3, 90) 
-    mover_para_angulo_suave(2, 90)
-    mover_para_angulo_suave(6, 90)
-    mover_para_angulo_suave(5, 90)
+
+# --- Mapeamento discreto de posições para o Nível 1 (P0, P1)
+# Índices: 1..13 conforme tabela fornecida
+POSICOES_NIVEL_1 = [
+    None,           # índice 0 não usado
+    (40, 140),      # posição 1
+    (50, 132),      # posição 2
+    (60, 125),      # posição 3
+    (70, 116),      # posição 4
+    (80, 107),      # posição 5
+    (90, 97),       # posição 6
+    (100, 90),      # posição 7 (inicial)
+    (110, 79),      # posição 8
+    (120, 70),      # posição 9
+    (130, 62),      # posição 10
+    (140, 53),      # posição 11
+    (150, 47),      # posição 12
+    (160, 38)       # posição 13
+]
+
+# posição atual do Nível 1 no mapeamento (1..13)
+posicao_nivel1 = 7
+
+# --- Funções de Baixo Nível (I2C) ---
+def write_reg(reg, val):
+    try:
+        i2c.write(PCA, bytes([reg, val]))
+    except OSError:
+        pass 
+
+def set_pwm_freq(freq):
+    prescale_val = int(25000000.0 / (4096 * freq) - 1)
+    try:
+        old = i2c.read(PCA, 1)[0]
+        write_reg(0x00, (old & 0x7F) | 0x10)  # sleep
+        write_reg(0xFE, prescale_val)
+        write_reg(0x00, old)
+        utime.sleep_ms(5)
+        write_reg(0x00, old | 0x80)
+    except OSError:
+        display.show("E")
+
+def set_pwm(channel, on, off):
+    reg = 0x06 + 4 * channel
+    write_reg(reg, on & 0xFF)
+    write_reg(reg + 1, (on >> 8) & 0xFF)
+    write_reg(reg + 2, off & 0xFF)
+    write_reg(reg + 3, (off >> 8) & 0xFF)
+
+def angle_to_pwm(angle):
+    # Proteção para não enviar valores negativos ou acima de 180 para o cálculo
+    if angle < 0: angle = 0
+    if angle > 180: angle = 180
     
-    display.show(Image.HEART) 
-    time.sleep_ms(1000)
+    pulse_min = 500
+    pulse_max = 2500
+    pulse = pulse_min + (pulse_max - pulse_min) * angle / 180
+    pwm_val = int(pulse / 1000000 * FREQ * 4096)
+    return pwm_val
 
-def executar_macro_b():
-    """Coreografia 2: Twist, Fechamento Leve e Abaixamento."""
-    display.show("B")
-    time.sleep_ms(300)
-    mover_para_angulo_suave(5, 60)  
-    mover_para_angulo_suave(4, 115) 
-    mover_para_angulo_suave(6, 75)  
-    mover_para_angulo_suave(3, 65)  
-    mover_para_angulo_suave(5, 90)
-    mover_para_angulo_suave(4, 90)
-    mover_para_angulo_suave(6, 90)
-    mover_para_angulo_suave(3, 90)
+# --- Controle Lógico do Braço ---
+
+def atualizar_motores(nivel_para_mover):
+    """
+    Move os motores baseados no ângulo armazenado no dicionário.
+    Trata o caso especial de espelhamento do Nível 1.
+    """
+    if nivel_para_mover == 1:
+        # --- Nível 1: Base (Portas 0 e 1) ---
+        # Usar o mapeamento discreto POSICOES_NIVEL_1 por índice posicao_nivel1
+        try:
+            p0, p1 = POSICOES_NIVEL_1[posicao_nivel1]
+        except Exception:
+            # fallback para o valor em angulos[1] mantendo compatibilidade
+            p0 = angulos.get(1, 100)
+            p1 = 190 - p0
+
+        set_pwm(PORTAS_NIVEL_1[0], 0, angle_to_pwm(p0))
+        set_pwm(PORTAS_NIVEL_1[1], 0, angle_to_pwm(p1))
+        return
+
+    elif nivel_para_mover == 2:
+        # --- Nível 2: Articulação 2 (Porta 3) ---
+        angulo_principal = angulos.get(2, 90)
+        set_pwm(PORTA_NIVEL_2, 0, angle_to_pwm(angulo_principal))
+
+    elif nivel_para_mover == 3:
+        # --- Nível 3: Articulação 3 (Porta 4) ---
+        angulo_principal = angulos.get(3, 90)
+        set_pwm(PORTA_NIVEL_3, 0, angle_to_pwm(angulo_principal))
+
+def inicializar_braco():
+    write_reg(0x00, 0x00)
+    utime.sleep_ms(5)
+    set_pwm_freq(FREQ)
     
-    display.show(Image.HEART)
-    time.sleep_ms(1000)
+    # Força a posição inicial de todos os níveis
+    atualizar_motores(1) # Põe 0 em 100° e 1 em 90°
+    utime.sleep_ms(50)
+    atualizar_motores(2) # Põe 3 em 90°
+    utime.sleep_ms(50)
+    atualizar_motores(3) # Põe 4 em 90°
+    
+    display.show(nivel_atual)
 
-try:
-    pca = PCA9685(i2c)
-    pca.freq(50)
-    for nivel, angulo in angulos_atuais.items():
-        send_servo_angle(nivel, angulo)
+# --- Execução ---
+inicializar_braco()
 
-    display.show(Image.YES)
-    time.sleep(1)
-except OSError as e:
-    display.show(Image.NO)
-    while True:
-        display.scroll("ERRO I2C")
-        time.sleep(1000)
-display.clear() 
 while True:
+    # --- Botão A: Diminui Angulo OU Sobe Nível ---
     if button_a.was_pressed():
-        executar_macro_a()
-        display.clear()
+        # Delay para detectar duplo clique
+        utime.sleep_ms(300)
+        
+        if button_a.was_pressed():
+            # >> CLIQUE DUPLO: Mudar Nível (Subir)
+            nivel_atual += 1
+            if nivel_atual > 3: 
+                nivel_atual = 3
+            display.show(nivel_atual)
+        else:
+            # >> CLIQUE ÚNICO: Mover Motor (passo discreto para Nível 1 ou -10° para outros)
+            if nivel_atual == 1:
+                # mover para posição anterior no mapeamento
+                posicao_nivel1 -= 1
+                if posicao_nivel1 < 1:
+                    posicao_nivel1 = 1
+            else:
+                angulos[nivel_atual] -= 10
+                # Limites de segurança (0 a 180)
+                if angulos[nivel_atual] < 0:
+                    angulos[nivel_atual] = 0
 
+            atualizar_motores(nivel_atual)
+            # Feedback visual rápido de movimento
+            display.show(".")
+            utime.sleep_ms(100)
+            display.show(nivel_atual)
+
+    # --- Botão B: Aumenta Angulo OU Desce Nível ---
     if button_b.was_pressed():
-        executar_macro_b()
-        display.clear()
-    for nivel, angulo in angulos_atuais.items(): 
-        send_servo_angle(nivel, angulo) 
-    time.sleep_ms(TEMPO_ATUALIZACAO_MS)
+        # Delay para detectar duplo clique
+        utime.sleep_ms(300)
+        
+        if button_b.was_pressed():
+            # >> CLIQUE DUPLO: Mudar Nível (Descer)
+            nivel_atual -= 1
+            if nivel_atual < 1: 
+                nivel_atual = 1
+            display.show(nivel_atual)
+        else:
+            # >> CLIQUE ÚNICO: Mover Motor (passo discreto para Nível 1 ou +10° para outros)
+            if nivel_atual == 1:
+                # mover para próxima posição no mapeamento
+                posicao_nivel1 += 1
+                if posicao_nivel1 > 13:
+                    posicao_nivel1 = 13
+            else:
+                angulos[nivel_atual] += 10
+                # Limites de segurança
+                if angulos[nivel_atual] > 180:
+                    angulos[nivel_atual] = 180
+
+            atualizar_motores(nivel_atual)
+            # Feedback visual
+            display.show(".")
+            utime.sleep_ms(100)
+            display.show(nivel_atual)
+            
+    utime.sleep_ms(50)
